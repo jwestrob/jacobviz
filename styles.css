@@ -1,0 +1,65 @@
+/* General styles */
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+}
+
+#main-container {
+    display: flex;
+    flex-direction: column; /* Stack sequences and heatmap vertically */
+    align-items: center; /* Center the content horizontally */
+    margin-top: 20px;
+}
+
+/* Sequences container */
+#sequences-container {
+    width: 80%; /* Adjust width as needed */
+    margin-bottom: 20px;
+}
+
+.sequence {
+    margin-bottom: 20px; /* Blank line between sequences */
+    font-family: monospace;
+    white-space: pre-wrap; /* Allow wrapping */
+    word-wrap: break-word;
+    line-height: 1.2;
+}
+
+/* Residue styles */
+.residue {
+    display: inline-block;
+    padding: 2px;
+}
+
+/* Highlighting styles */
+.hover-highlight {
+    background-color: yellow;
+}
+
+.manual-highlight {
+    background-color: lightblue;
+}
+
+/* Combined highlighting */
+.hover-highlight.manual-highlight {
+    background-color: orange;
+}
+
+/* Tooltip styles */
+#tooltip {
+    position: absolute;
+    background-color: white;
+    border: 1px solid black;
+    padding: 5px;
+    pointer-events: none;
+    z-index: 10;
+}
+
+.hidden {
+    opacity: 0;
+}
+
+.visible {
+    opacity: 1;
+}
