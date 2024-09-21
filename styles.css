@@ -1,65 +1,66 @@
-/* General styles */
+/* styles.css */
+
 body {
     font-family: Arial, sans-serif;
-    margin: 0;
-    padding: 0;
+    margin: 20px;
 }
 
-#main-container {
-    display: flex;
-    flex-direction: column; /* Stack sequences and heatmap vertically */
-    align-items: center; /* Center the content horizontally */
-    margin-top: 20px;
-}
-
-/* Sequences container */
-#sequences-container {
-    width: 80%; /* Adjust width as needed */
+#controls {
     margin-bottom: 20px;
 }
 
 .sequence {
-    margin-bottom: 20px; /* Blank line between sequences */
-    font-family: monospace;
-    white-space: pre-wrap; /* Allow wrapping */
-    word-wrap: break-word;
-    line-height: 1.2;
+    margin-bottom: 10px;
 }
 
-/* Residue styles */
+.sequence-label {
+    font-weight: bold;
+}
+
+.sequence-content {
+    display: flex;
+    flex-wrap: wrap;
+}
+
 .residue {
-    display: inline-block;
-    padding: 2px;
+    padding: 2px 4px;
+    cursor: pointer;
+    user-select: none;
 }
 
-/* Highlighting styles */
-.hover-highlight {
+.residue.hover-highlight {
     background-color: yellow;
 }
 
-.manual-highlight {
-    background-color: lightblue;
-}
-
-/* Combined highlighting */
-.hover-highlight.manual-highlight {
+.residue.manual-highlight {
     background-color: orange;
 }
 
-/* Tooltip styles */
+#heatmap-container {
+    margin-top: 20px;
+}
+
 #tooltip {
     position: absolute;
-    background-color: white;
-    border: 1px solid black;
-    padding: 5px;
+    text-align: center;
+    padding: 8px;
+    font-size: 12px;
+    background: lightsteelblue;
+    border: 1px solid #ccc;
+    border-radius: 4px;
     pointer-events: none;
-    z-index: 10;
 }
 
 .hidden {
-    opacity: 0;
+    display: none;
 }
 
 .visible {
-    opacity: 1;
+    display: block;
+}
+
+.error {
+    color: red;
+    font-weight: bold;
+    margin-top: 10px;
 }

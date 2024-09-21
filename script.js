@@ -1,24 +1,95 @@
+// script.js
+
 // Ensure the script runs after the page has loaded
 document.addEventListener('DOMContentLoaded', function () {
-    // Define file paths
-    const sequencesFile = 'data/sequences.txt';
-    const contactMapFile = 'data/contact_map.csv';
+    // API endpoint to get the list of JSON data files
+    const dataFilesEndpoint = '/api/data-files';
 
     // Heatmap dimensions
     const heatmapWidth = 700;
     const heatmapHeight = 700;
 
-    // Load sequences and contact map data
-    Promise.all([
-        d3.text(sequencesFile),
-        d3.csv(contactMapFile, d3.autoType)
-    ]).then(([sequenceInput, contactData]) => {
-        // Process sequences
-        const sequences = parseSequences(sequenceInput);
-        const sequencePositions = calculateSequencePositions(sequences);
+    // Initialize a cache object to store fetched JSON data
+    const dataCache = {};
 
-        // Process contact map data
-        const matrixData = processContactMap(contactData);
+    // Fetch the list of JSON data files from the server
+    fetch(dataFilesEndpoint)
+        .then(response => response.json())
+        .then(data => {
+            const dataFiles = data.data_files;
+
+            // Populate the dropdown menu
+            const dataSelect = d3.select('#data-select');
+            dataSelect.selectAll('option').remove(); // Clear existing options
+
+            dataSelect.selectAll('option')
+                .data(dataFiles)
+                .enter()
+                .append('option')
+                .attr('value', d => d)
+                .text(d => d.replace('.json', ''));
+
+            // Set the first option as selected and load it
+            if (dataFiles.length > 0) {
+                loadData(dataFiles[0]);
+                dataSelect.property('value', dataFiles[0]);
+            } else {
+                dataSelect.append('option')
+                    .attr('value', '')
+                    .attr('disabled', true)
+                    .attr('selected', true)
+                    .text('No data files available');
+            }
+
+            // Add event listener for dropdown change
+            dataSelect.on('change', function(event) {
+                const selectedFile = event.target.value;
+                loadData(selectedFile);
+            });
+
+        })
+        .catch(error => {
+            console.error('Error fetching data files:', error);
+            // Update dropdown to show error
+            const dataSelect = d3.select('#data-select');
+            dataSelect.selectAll('option').remove();
+            dataSelect.append('option')
+                .attr('value', '')
+                .attr('disabled', true)
+                .attr('selected', true)
+                .text('Error loading data files');
+        });
+
+    // Function to load and render data from a JSON file with caching
+    function loadData(jsonFile) {
+        // Check if the data is already in the cache
+        if (dataCache[jsonFile]) {
+            console.log(`Loading ${jsonFile} from cache.`);
+            renderVisualization(dataCache[jsonFile]);
+            return;
+        }
+
+        // If not in cache, fetch the data from the server
+        d3.json(`data/${jsonFile}`).then(data => {
+            // Store the fetched data in the cache
+            dataCache[jsonFile] = data;
+            console.log(`Fetched and cached ${jsonFile}.`);
+            renderVisualization(data);
+        }).catch(error => {
+            console.error(`Error loading ${jsonFile}:`, error);
+            // Optionally, display an error message in the UI
+            d3.select('#heatmap-container')
+                .append('div')
+                .attr('class', 'error')
+                .text(`Error loading ${jsonFile}: ${error.message}`);
+        });
+    }
+
+    // Function to render the visualization given the data
+    function renderVisualization(data) {
+        const sequences = parseSequences(data.sequences);
+        const sequencePositions = calculateSequencePositions(sequences);
+        const matrixData = data.contact_map;
         const matrixSize = matrixData.length;
 
         // Create scales
@@ -40,10 +111,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // Render heatmap
         renderHeatmap(matrixData, xScale, yScale, colorScale, sequencePositions);
-
-    }).catch(error => {
-        console.error('Error loading data:', error);
-    });
+    }
 
     // Function to parse sequences
     function parseSequences(sequenceInput) {
@@ -71,14 +139,6 @@ document.addEventListener('DOMContentLoaded', function () {
             currentPos = end + separatorLength + 1;
         });
         return sequencePositions;
-    }
-
-    // Function to process contact map data
-    function processContactMap(contactData) {
-        // Assuming contactData is an array of objects where each object represents a row
-        // Convert it into a 2D array (matrix)
-        const matrixData = contactData.map(row => Object.values(row).map(Number));
-        return matrixData;
     }
 
     // Function to render sequences

@@ -4,23 +4,28 @@
     <meta charset="UTF-8">
     <title>Interactive Contact Map Visualization</title>
     <link rel="stylesheet" href="styles.css">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
 </head>
 <body>
-    <!-- Main container to hold sequences and heatmap -->
-    <div id="main-container">
-        <!-- Container for the sequences -->
-        <div id="sequences-container"></div>
-
-        <!-- Container for the heatmap -->
-        <div id="heatmap-container"></div>
+    <h1>Interactive Contact Map Visualization</h1>
+    
+    <!-- Dropdown for selecting contact map -->
+    <div id="controls">
+        <label for="data-select">Select Contact Map:</label>
+        <select id="data-select">
+            <option value="" disabled selected>Loading...</option>
+        </select>
     </div>
-
-    <!-- Tooltip for displaying hover information -->
+    
+    <!-- Container for sequences -->
+    <div id="sequences-container"></div>
+    
+    <!-- Container for heatmap -->
+    <div id="heatmap-container"></div>
+    
+    <!-- Tooltip -->
     <div id="tooltip" class="hidden"></div>
-
-    <!-- Include D3.js -->
-    <script src="https://d3js.org/d3.v6.min.js"></script>
-    <!-- Include the main JavaScript file -->
+    
     <script src="script.js"></script>
 </body>
 </html>
