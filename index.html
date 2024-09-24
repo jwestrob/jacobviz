@@ -4,7 +4,10 @@
     <meta charset="UTF-8">
     <title>Interactive Contact Map Visualization</title>
     <link rel="stylesheet" href="styles.css">
+    <!-- Include D3.js -->
     <script src="https://d3js.org/d3.v7.min.js"></script>
+    <!-- Include 3Dmol.js for protein visualization -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/3Dmol/2.0.4/3Dmol-min.js"></script>
 </head>
 <body>
     <h1>Interactive Contact Map Visualization</h1>
@@ -20,8 +23,16 @@
     <!-- Container for sequences -->
     <div id="sequences-container"></div>
     
-    <!-- Container for heatmap -->
-    <div id="heatmap-container"></div>
+    <!-- Flex container for heatmap and protein visualizer -->
+    <div id="main-content">
+        <!-- Container for heatmap -->
+        <div id="heatmap-container"></div>
+        
+        <!-- Container for protein structure visualization -->
+        <div id="protein-visualizer-container">
+            <div id="protein-visualizer"></div>
+        </div>
+    </div>
     
     <!-- Tooltip -->
     <div id="tooltip" class="hidden"></div>

@@ -6,11 +6,15 @@ document.addEventListener('DOMContentLoaded', function () {
     const dataFilesEndpoint = '/api/data-files';
 
     // Heatmap dimensions
-    const heatmapWidth = 700;
-    const heatmapHeight = 700;
+    let heatmapWidth;
+    let heatmapHeight;
 
     // Initialize a cache object to store fetched JSON data
     const dataCache = {};
+
+    // Initialize variables for protein visualization
+    let viewer = null;
+    let residueMapping = {};
 
     // Fetch the list of JSON data files from the server
     fetch(dataFilesEndpoint)
@@ -92,6 +96,12 @@ document.addEventListener('DOMContentLoaded', function () {
         const matrixData = data.contact_map;
         const matrixSize = matrixData.length;
 
+        // Update heatmap dimensions based on container size
+        const containerWidth = document.getElementById('heatmap-container').clientWidth;
+        const containerHeight = containerWidth; // Keep it square
+        heatmapWidth = containerWidth - 40; // Account for margins
+        heatmapHeight = containerHeight - 40;
+
         // Create scales
         const xScale = d3.scaleBand()
             .domain(d3.range(matrixSize))
@@ -107,15 +117,25 @@ document.addEventListener('DOMContentLoaded', function () {
             .domain([d3.min(matrixData.flat()), d3.max(matrixData.flat())]);
 
         // Render sequences
-        renderSequences(sequences);
+        renderSequences(sequences, sequencePositions);
 
         // Render heatmap
         renderHeatmap(matrixData, xScale, yScale, colorScale, sequencePositions);
+
+        // If pdb_id is present, fetch and visualize the protein structure
+        if (data.pdb_id) {
+            fetchPDBAndRender(data.pdb_id, sequences);
+        } else {
+            // Clear previous protein visualization if any
+            d3.select('#protein-visualizer').html('');
+            viewer = null;
+            residueMapping = {};
+        }
     }
 
     // Function to parse sequences
     function parseSequences(sequenceInput) {
-        return sequenceInput.split('<+>').filter(seq => seq.length > 0);
+        return sequenceInput.split('<+>').filter(seq => seq.length > 0).map(seq => seq.trim().toUpperCase());
     }
 
     // Function to calculate sequence positions within the concatenated sequence
@@ -142,8 +162,15 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     // Function to render sequences
-    function renderSequences(sequences) {
+    function renderSequences(sequences, sequencePositions) {
         const sequenceContainer = d3.select('#sequences-container');
+        sequenceContainer.html(''); // Clear existing sequences
+
+        // Print input sequences to console for debugging
+        console.log("Input Sequences:");
+        sequences.forEach((seq, seqIndex) => {
+            console.log(`Sequence ${seqIndex}: ${seq}`);
+        });
 
         sequences.forEach((seq, seqIndex) => {
             const seqDiv = sequenceContainer.append('div')
@@ -168,6 +195,13 @@ document.addEventListener('DOMContentLoaded', function () {
                     .on('click', function () {
                         const element = d3.select(this);
                         element.classed('manual-highlight', !element.classed('manual-highlight'));
+                    })
+                    .on('mouseover', function () {
+                        const index = sequencePositions[seqIndex].start + resIndex;
+                        highlightResidues(index, index, sequencePositions);
+                    })
+                    .on('mouseout', function () {
+                        clearHighlights();
                     });
             });
         });
@@ -175,12 +209,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Function to render heatmap
     function renderHeatmap(matrixData, xScale, yScale, colorScale, sequencePositions) {
-        const heatmapWidth = 700;
-        const heatmapHeight = 700;
+        const heatmapContainer = d3.select('#heatmap-container');
+        heatmapContainer.html(''); // Clear existing heatmap
+
         const margin = { top: 20, right: 20, bottom: 20, left: 20 };
 
-        const svg = d3.select('#heatmap-container')
-            .append('svg')
+        const svg = heatmapContainer.append('svg')
             .attr('width', heatmapWidth + margin.left + margin.right)
             .attr('height', heatmapHeight + margin.top + margin.bottom)
             .call(d3.zoom()
@@ -214,7 +248,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         // Render heatmap cells
-        heatmapGroup.selectAll()
+        heatmapGroup.selectAll('rect')
             .data(flatData)
             .enter()
             .append('rect')
@@ -234,17 +268,13 @@ document.addEventListener('DOMContentLoaded', function () {
         function zoomed(event) {
             heatmapGroup.attr('transform', event.transform);
         }
+
+        // For debugging: Print heatmap dimensions
+        console.log(`Heatmap Dimensions: Width=${heatmapWidth}, Height=${heatmapHeight}`);
     }
 
     // Function to handle mouse over event
     function handleMouseOver(event, d, sequencePositions, xScale, yScale, svg) {
-        // Get the current transform
-        const transform = d3.zoomTransform(svg.node());
-
-        // Adjust the position based on the transform
-        const xPosition = transform.applyX(xScale(d.x) + xScale.bandwidth() / 2);
-        const yPosition = transform.applyY(yScale(d.y) + yScale.bandwidth() / 2);
-
         // Highlight corresponding residues
         highlightResidues(d.x, d.y, sequencePositions);
 
@@ -280,12 +310,44 @@ document.addEventListener('DOMContentLoaded', function () {
             d3.select(`#seq${yMapping.seqIndex}-res${yMapping.resIndex}`)
                 .classed('hover-highlight', true);
         }
+
+        // Highlight residues in the protein structure
+        if (viewer && residueMapping) {
+            const residuesToHighlight = [];
+
+            if (xMapping && residueMapping[xPos]) {
+                residuesToHighlight.push(...residueMapping[xPos]);
+            }
+            if (yMapping && residueMapping[yPos]) {
+                residuesToHighlight.push(...residueMapping[yPos]);
+            }
+
+            // Reset all styles
+            viewer.setStyle({}, { cartoon: { colorscheme: 'chain' } });
+
+            // Highlight new residues
+            if (residuesToHighlight.length > 0) {
+                residuesToHighlight.forEach(res => {
+                    viewer.setStyle(
+                        { chain: res.chain, resi: res.resi },
+                        { cartoon: { color: 'red' } }
+                    );
+                });
+                viewer.render();
+            }
+        }
     }
 
     // Function to clear highlights
     function clearHighlights() {
         d3.selectAll('.residue')
             .classed('hover-highlight', false);
+
+        // Reset protein structure highlights
+        if (viewer) {
+            viewer.setStyle({}, { cartoon: { colorscheme: 'chain' } });
+            viewer.render();
+        }
     }
 
     // Function to map matrix index to sequence position
@@ -299,6 +361,187 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         }
         return null;
+    }
+
+    // Function to fetch PDB file and render the protein structure
+    function fetchPDBAndRender(pdb_id, sequences) {
+        const pdbUrl = `https://files.rcsb.org/download/${pdb_id}.pdb`;
+
+        fetch(pdbUrl)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`Network response was not ok for PDB ID ${pdb_id}`);
+                }
+                return response.text();
+            })
+            .then(pdbData => {
+                parsePDBAndMapResidues(pdbData, sequences);
+                renderProteinStructure(pdbData, pdb_id);
+            })
+            .catch(error => {
+                console.error(`Error fetching PDB file for ${pdb_id}:`, error);
+                d3.select('#protein-visualizer-container')
+                    .append('div')
+                    .attr('class', 'error')
+                    .text(`Error loading PDB structure for ${pdb_id}: ${error.message}`);
+            });
+    }
+
+    // Function to parse PDB and map residues
+    function parsePDBAndMapResidues(pdbData, sequences) {
+        residueMapping = {}; // Reset residue mapping
+
+        const pdbLines = pdbData.split('\n');
+        const chainSequences = {};
+        const chainResidues = {};
+
+        // Extract sequences from SEQRES records
+        pdbLines.forEach(line => {
+            if (line.startsWith('SEQRES')) {
+                const chainID = line.substring(11, 12).trim();
+                const resNames = line.substring(19).trim().split(/\s+/);
+                if (!chainSequences[chainID]) {
+                    chainSequences[chainID] = '';
+                    chainResidues[chainID] = [];
+                }
+                resNames.forEach(resName => {
+                    const resCode = threeLetterToOneLetter(resName);
+                    chainSequences[chainID] += resCode;
+                    chainResidues[chainID].push({ resi: null, resn: resName });
+                });
+            }
+        });
+
+        // Map residue numbers from ATOM records
+        pdbLines.forEach(line => {
+            if (line.startsWith('ATOM') || line.startsWith('HETATM')) {
+                const chainID = line.substring(21, 22).trim();
+                const resSeq = parseInt(line.substring(22, 26).trim());
+                const resName = line.substring(17, 20).trim();
+
+                if (chainResidues[chainID]) {
+                    // Find the first residue with matching resn and resi is null
+                    const residue = chainResidues[chainID].find(res => res.resn === resName && res.resi === null);
+                    if (residue) {
+                        residue.resi = resSeq;
+                    }
+                }
+            }
+        });
+
+        // Print sequences of each chain to console for debugging
+        console.log("PDB Chain Sequences:");
+        Object.keys(chainSequences).forEach(chainID => {
+            const sequence = chainSequences[chainID];
+            console.log(`Chain ${chainID}: ${sequence}`);
+        });
+
+        // Print input sequences to console for debugging
+        console.log("Input Sequences:");
+        sequences.forEach((seq, seqIndex) => {
+            console.log(`Sequence ${seqIndex}: ${seq}`);
+        });
+
+        // Map input sequences to PDB chain sequences
+        sequences.forEach((inputSeq, seqIndex) => {
+            Object.keys(chainSequences).forEach(chainID => {
+                const chainSeq = chainSequences[chainID];
+                const alignmentIndex = simpleSequenceAlignment(chainSeq, inputSeq);
+
+                if (alignmentIndex !== -1) {
+                    console.log(`Sequence ${seqIndex} aligned with chain ${chainID} at position ${alignmentIndex}`);
+                    // Map each residue position
+                    for (let i = 0; i < inputSeq.length; i++) {
+                        const globalIndex = sequences.slice(0, seqIndex).reduce((acc, seq) => acc + seq.length + '<+>'.length, 0) + i;
+                        const chainResidue = chainResidues[chainID][alignmentIndex + i];
+
+                        if (!residueMapping[globalIndex]) {
+                            residueMapping[globalIndex] = [];
+                        }
+
+                        residueMapping[globalIndex].push({
+                            chain: chainID,
+                            resi: chainResidue.resi || (alignmentIndex + i + 1) // Assign resi if missing
+                        });
+                    }
+                } else {
+                    console.log(`Sequence ${seqIndex} did not align with chain ${chainID}`);
+                }
+            });
+        });
+
+        // For debugging: Print residueMapping
+        console.log("Residue Mapping:", residueMapping);
+    }
+
+    // Simple sequence alignment function
+    function simpleSequenceAlignment(chainSeq, inputSeq) {
+        const maxMismatch = 5; // Allow up to 5 mismatches
+        for (let i = 0; i <= chainSeq.length - inputSeq.length; i++) {
+            let mismatches = 0;
+            for (let j = 0; j < inputSeq.length; j++) {
+                if (chainSeq[i + j] !== inputSeq[j]) {
+                    mismatches++;
+                    if (mismatches > maxMismatch) break;
+                }
+            }
+            if (mismatches <= maxMismatch) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    // Function to render protein structure using 3Dmol.js
+    function renderProteinStructure(pdbData, pdb_id) {
+        const element = document.getElementById('protein-visualizer');
+        element.innerHTML = ''; // Clear previous visualization
+
+        viewer = $3Dmol.createViewer(element, { defaultcolors: $3Dmol.rasmolElementColors });
+
+        viewer.addModel(pdbData, 'pdb');
+
+        // Collect unique chain IDs manually
+        const chainIDs = new Set();
+        viewer.getModel().atoms.forEach(atom => {
+            if (atom.chain && !chainIDs.has(atom.chain)) {
+                chainIDs.add(atom.chain);
+            }
+        });
+
+        // Print chain IDs and their sequences for debugging
+        console.log("Unique Chain IDs:", Array.from(chainIDs));
+
+        // Assign unique colors to each chain
+        const colorScale = d3.scaleOrdinal(d3.schemeCategory10);
+        let chainIndex = 0;
+        chainIDs.forEach(chainID => {
+            viewer.setStyle(
+                { chain: chainID },
+                { cartoon: { color: colorScale(chainIndex) } }
+            );
+            chainIndex++;
+        });
+
+        // Highlight residues based on residueMapping
+        // (Residues will be highlighted on hover events)
+
+        viewer.zoomTo();
+        viewer.render();
+    }
+
+    // Helper function to convert three-letter amino acid codes to one-letter codes
+    function threeLetterToOneLetter(threeLetter) {
+        const aaTable = {
+            'ALA': 'A', 'ARG': 'R', 'ASN': 'N', 'ASP': 'D',
+            'CYS': 'C', 'GLN': 'Q', 'GLU': 'E', 'GLY': 'G',
+            'HIS': 'H', 'ILE': 'I', 'LEU': 'L', 'LYS': 'K',
+            'MET': 'M', 'PHE': 'F', 'PRO': 'P', 'SER': 'S',
+            'THR': 'T', 'TRP': 'W', 'TYR': 'Y', 'VAL': 'V',
+            'SEC': 'U', 'PYL': 'O', 'ASX': 'B', 'GLX': 'Z',
+            'XLE': 'J', 'XAA': 'X', 'UNK': 'X', 'MSE': 'M'
+        };
+        return aaTable[threeLetter.toUpperCase()] || 'X';
     }
 
 });
