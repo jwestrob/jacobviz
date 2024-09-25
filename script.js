@@ -290,12 +290,6 @@ document.addEventListener('DOMContentLoaded', function () {
         const sequenceContainer = d3.select('#sequences-container');
         sequenceContainer.html(''); // Clear existing sequences
 
-        // Print input sequences to console for debugging
-        console.log("Input Sequences:");
-        sequences.forEach((seq, seqIndex) => {
-            console.log(`Sequence ${seqIndex}: ${seq}`);
-        });
-
         sequences.forEach((seq, seqIndex) => {
             const seqDiv = sequenceContainer.append('div')
                 .attr('id', `sequence-${seqIndex}`)
@@ -307,27 +301,38 @@ document.addEventListener('DOMContentLoaded', function () {
                 .text(`Sequence ${seqIndex + 1}:`)
                 .style('margin-bottom', '5px');
 
-            // Create a span for the entire sequence
-            const seqSpan = seqDiv.append('div')
+            // Create a div for the sequence content
+            const seqContentDiv = seqDiv.append('div')
                 .attr('class', 'sequence-content');
 
-            seq.split('').forEach((residue, resIndex) => {
-                seqSpan.append('span')
-                    .attr('id', `seq${seqIndex}-res${resIndex}`)
-                    .attr('class', 'residue')
-                    .text(residue)
-                    .on('click', function () {
-                        const element = d3.select(this);
-                        element.classed('manual-highlight', !element.classed('manual-highlight'));
-                    })
-                    .on('mouseover', function () {
-                        const index = sequencePositions[seqIndex].start + resIndex;
-                        highlightResidues(index, index, sequencePositions);
-                    })
-                    .on('mouseout', function () {
-                        clearHighlights();
-                    });
-            });
+            // Split the sequence into lines of 150 characters
+            const lineLength = 150;
+            for (let i = 0; i < seq.length; i += lineLength) {
+                const lineSeq = seq.substring(i, i + lineLength);
+
+                // Create a span for the line
+                const lineSpan = seqContentDiv.append('div')
+                    .attr('class', 'sequence-line');
+
+                lineSeq.split('').forEach((residue, resIndex) => {
+                    const globalResIndex = i + resIndex;
+                    lineSpan.append('span')
+                        .attr('id', `seq${seqIndex}-res${globalResIndex}`)
+                        .attr('class', 'residue')
+                        .text(residue)
+                        .on('click', function () {
+                            const element = d3.select(this);
+                            element.classed('manual-highlight', !element.classed('manual-highlight'));
+                        })
+                        .on('mouseover', function () {
+                            const index = sequencePositions[seqIndex].start + globalResIndex;
+                            highlightResidues(index, index, sequencePositions);
+                        })
+                        .on('mouseout', function () {
+                            clearHighlights();
+                        });
+                });
+            }
         });
     }
 
