@@ -15,9 +15,18 @@ document.addEventListener('DOMContentLoaded', function () {
     // Initialize variables for protein visualization
     let viewer = null;
     let residueMapping = {};
+    let sequenceOffsets = {};
 
     // Mapping of chainID to color
-    const chainColorMap = {};
+    let chainColorMap = {};
+
+    // Map of 3-letter codes to 1-letter codes
+    const threeToOne = {
+        'ALA': 'A', 'ARG': 'R', 'ASN': 'N', 'ASP': 'D', 'CYS': 'C',
+        'GLN': 'Q', 'GLU': 'E', 'GLY': 'G', 'HIS': 'H', 'ILE': 'I',
+        'LEU': 'L', 'LYS': 'K', 'MET': 'M', 'PHE': 'F', 'PRO': 'P',
+        'SER': 'S', 'THR': 'T', 'TRP': 'W', 'TYR': 'Y', 'VAL': 'V'
+    };
 
     // Variables for performance optimization
     let isZooming = false;
@@ -211,7 +220,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         // Define color scale
-        const colorScale = d3.scaleSequential(d3.interpolateViridis)
+        const colorScaleStatic = d3.scaleSequential(d3.interpolateViridis)
             .domain([d3.min(matrixData.flat()), d3.max(matrixData.flat())]);
 
         // Render heatmap cells
@@ -223,7 +232,7 @@ document.addEventListener('DOMContentLoaded', function () {
             .attr('y', d => yScale(d.y))
             .attr('width', xScale.bandwidth())
             .attr('height', yScale.bandwidth())
-            .style('fill', d => colorScale(d.value));
+            .style('fill', d => colorScaleStatic(d.value));
 
         // Add x-axis
         const xAxis = d3.axisBottom(xScale)
@@ -425,11 +434,18 @@ document.addEventListener('DOMContentLoaded', function () {
         // Highlight corresponding residues
         highlightResidues(d.x, d.y, sequencePositions);
 
+        // Get adjusted indices
+        const xMapping = mapIndexToSequence(d.x, sequencePositions);
+        const yMapping = mapIndexToSequence(d.y, sequencePositions);
+
+        const adjustedXIndex = xMapping ? xMapping.adjustedIndex + 1 : d.x + 1;
+        const adjustedYIndex = yMapping ? yMapping.adjustedIndex + 1 : d.y + 1;
+
         // Display tooltip at the mouse position
         const tooltip = d3.select('#tooltip');
         tooltip.classed('hidden', false)
             .classed('visible', true)
-            .html(`Value: ${d.value.toFixed(4)}<br>X: ${d.x}<br>Y: ${d.y}`)
+            .html(`Value: ${d.value.toFixed(4)}<br>X: ${adjustedXIndex}<br>Y: ${adjustedYIndex}`)
             .style('left', (event.pageX + 15) + 'px')
             .style('top', (event.pageY - 28) + 'px');
     }
@@ -458,13 +474,13 @@ document.addEventListener('DOMContentLoaded', function () {
             const residueLetter = sequencePositions[xMapping.seqIndex].sequence[xMapping.resIndex];
             d3.select(`#seq${xMapping.seqIndex}-res${xMapping.resIndex}`)
                 .classed('hover-highlight', true);
-            residueInfoText += `Residue X: Index ${xPos}, Letter ${residueLetter}<br>`;
+            residueInfoText += `Residue X: Index ${xMapping.adjustedIndex + 1}, Letter ${residueLetter}<br>`;
         }
         if (yMapping) {
             const residueLetter = sequencePositions[yMapping.seqIndex].sequence[yMapping.resIndex];
             d3.select(`#seq${yMapping.seqIndex}-res${yMapping.resIndex}`)
                 .classed('hover-highlight', true);
-            residueInfoText += `Residue Y: Index ${yPos}, Letter ${residueLetter}<br>`;
+            residueInfoText += `Residue Y: Index ${yMapping.adjustedIndex + 1}, Letter ${residueLetter}<br>`;
         }
 
         // Update residue info display
@@ -473,10 +489,10 @@ document.addEventListener('DOMContentLoaded', function () {
         // Highlight residues in the protein structure
         if (viewer && residueMapping) {
             if (xMapping && residueMapping[xPos]) {
-                newHighlightedResidues.push(...residueMapping[xPos]);
+                newHighlightedResidues.push(residueMapping[xPos]);
             }
             if (yMapping && residueMapping[yPos]) {
-                newHighlightedResidues.push(...residueMapping[yPos]);
+                newHighlightedResidues.push(residueMapping[yPos]);
             }
 
             // Remove highlighting from previously highlighted residues
@@ -515,42 +531,35 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Function to clear highlights
     function clearHighlights() {
-        d3.selectAll('.residue')
-            .classed('hover-highlight', false);
+        // Clear highlights in the sequence
+        d3.selectAll('.residue.hover-highlight').classed('hover-highlight', false);
 
-        // Reset protein structure highlights
-        if (viewer && previouslyHighlightedResidues.length > 0) {
-            previouslyHighlightedResidues.forEach(res => {
-                // Reset to the chain's original color
-                const chainColor = chainColorMap[res.chain];
-                if (chainColor) {
-                    viewer.setStyle(
-                        { chain: res.chain, resi: res.resi },
-                        { cartoon: { color: chainColor } }
-                    );
-                } else {
-                    // If no chain color found, reset to default
-                    viewer.setStyle(
-                        { chain: res.chain, resi: res.resi },
-                        { cartoon: { color: 'grey' } }
-                    );
-                }
-            });
-            previouslyHighlightedResidues = [];
+        // Reset styles in the 3D structure
+        if (viewer) {
+            viewer.setStyle({}, {}); // Clear all styles
+            // Reapply default styles to all chains
+            for (const chainID in chainColorMap) {
+                viewer.setStyle(
+                    { chain: chainID },
+                    { cartoon: { color: chainColorMap[chainID] } }
+                );
+            }
             viewer.render();
         }
-
-        // Clear residue info
-        d3.select('#residue-info').html('');
     }
 
     // Function to map matrix index to sequence position
     function mapIndexToSequence(index, sequencePositions) {
         for (let seqInfo of sequencePositions) {
             if (index >= seqInfo.start && index <= seqInfo.end) {
+                const seqIndex = seqInfo.index;
+                const resIndex = index - seqInfo.start;
+                const offset = sequenceOffsets[seqIndex] || 0;
+                const adjustedIndex = resIndex - offset;
                 return {
-                    seqIndex: seqInfo.index,
-                    resIndex: index - seqInfo.start
+                    seqIndex: seqIndex,
+                    resIndex: resIndex,
+                    adjustedIndex: adjustedIndex
                 };
             }
         }
@@ -575,6 +584,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
                 worker.onmessage = function (e) {
                     residueMapping = e.data.residueMapping;
+                    sequenceOffsets = e.data.sequenceOffsets; // Store sequence offsets
                     renderProteinStructure(pdbData, pdb_id);
                     worker.terminate(); // Terminate the worker after completion
 
@@ -601,7 +611,11 @@ document.addEventListener('DOMContentLoaded', function () {
         const element = document.getElementById('protein-visualizer');
         element.innerHTML = ''; // Clear previous visualization
 
-        viewer = $3Dmol.createViewer(element, { defaultcolors: $3Dmol.rasmolElementColors });
+        viewer = $3Dmol.createViewer(element, {
+            defaultcolors: $3Dmol.rasmolElementColors,
+            width: element.clientWidth,
+            height: element.clientHeight
+        });
 
         // Add model with doAssembly option set to true
         viewer.addModel(pdbData, 'pdb', { doAssembly: true });
@@ -615,13 +629,14 @@ document.addEventListener('DOMContentLoaded', function () {
         });
 
         // Assign unique colors to each chain and store in chainColorMap
+        chainColorMap = {}; // Reset chainColorMap
         const colorScale = d3.scaleOrdinal(d3.schemeCategory10);
         let chainIndex = 0;
         chainIDs.forEach(chainID => {
             const color = colorScale(chainIndex);
             chainColorMap[chainID] = color;
             viewer.setStyle(
-                { chain: chainID },
+                { chain: chainID, resn: Object.keys(threeToOne) }, // Only standard amino acids
                 { cartoon: { color: color } }
             );
             chainIndex++;
@@ -629,6 +644,30 @@ document.addEventListener('DOMContentLoaded', function () {
 
         viewer.zoomTo();
         viewer.render();
+
+        // Handle window resize to adjust viewer size
+        window.addEventListener('resize', function () {
+            if (viewer) {
+                viewer.resize();
+                viewer.render();
+            }
+        });
+    }
+    
+    function getResidueInfo(i, j, sequencePositions) {
+        const seqInfoI = mapIndexToSequence(i, sequencePositions);
+        const seqInfoJ = mapIndexToSequence(j, sequencePositions);
+
+        const residueI = residueMapping[i];
+        const residueJ = residueMapping[j];
+
+        const adjustedIndexI = seqInfoI ? seqInfoI.adjustedIndex + 1 : i + 1;
+        const adjustedIndexJ = seqInfoJ ? seqInfoJ.adjustedIndex + 1 : j + 1;
+
+        const resInfoI = residueI ? `Chain ${residueI.chain}, Residue ${residueI.resi}` : 'N/A';
+        const resInfoJ = residueJ ? `Chain ${residueJ.chain}, Residue ${residueJ.resi}` : 'N/A';
+
+        return `Position ${adjustedIndexI} (${resInfoI}) ↔ Position ${adjustedIndexJ} (${resInfoJ})`;
     }
 
     // Function to fetch CIF file and prepare for contact map generation
