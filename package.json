@@ -1,0 +1,24 @@
+{
+  "name": "jacobviz",
+  "version": "1.0.0",
+  "description": "## Overview",
+  "main": "script.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jwestrob/jacobviz.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/jwestrob/jacobviz/issues"
+  },
+  "homepage": "https://github.com/jwestrob/jacobviz#readme",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.0"
+  }
+}

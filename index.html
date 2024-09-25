@@ -1,26 +1,65 @@
+<!-- index.html -->
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <title>Interactive Contact Map Visualization</title>
     <link rel="stylesheet" href="styles.css">
+    <!-- Include D3.js -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <!-- Include 3Dmol.js for protein visualization -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/3Dmol/2.0.4/3Dmol-min.js"></script>
 </head>
 <body>
-    <!-- Main container to hold sequences and heatmap -->
-    <div id="main-container">
-        <!-- Container for the sequences -->
-        <div id="sequences-container"></div>
+    <h1>Interactive Contact Map Visualization</h1>
 
-        <!-- Container for the heatmap -->
-        <div id="heatmap-container"></div>
+    <!-- Dropdown for selecting contact map -->
+    <div id="controls">
+        <label for="data-select">Select Contact Map:</label>
+        <select id="data-select">
+            <option value="" disabled selected>Loading...</option>
+        </select>
     </div>
 
-    <!-- Tooltip for displaying hover information -->
+    <!-- Container for sequences -->
+    <div id="sequences-container"></div>
+
+    <!-- Middle container for interactive heatmap and 3D structure -->
+    <div id="middle-container">
+        <!-- Container for interactive Jacobian heatmap -->
+        <div id="heatmap-container"></div>
+        <!-- Container for protein structure visualization -->
+        <div id="protein-visualizer-container">
+            <div id="protein-visualizer"></div>
+        </div>
+    </div>
+
+    <!-- Container for residue information -->
+    <div id="residue-info"></div>
+
+    <!-- Controls for contact map generation -->
+    <div id="contact-map-controls">
+        <h2>Generate Contact Map from CIF File</h2>
+        <label for="chain-select">Select Chains:</label><br>
+        <select id="chain-select" multiple></select><br><br>
+        <label for="distance-threshold">Distance Threshold (Å):</label>
+        <input type="number" id="distance-threshold" value="8.0" step="0.1"><br><br>
+        <button id="generate-contact-map-button" disabled>Generate Contact Map</button>
+    </div>
+
+    <!-- Bottom container for static heatmaps -->
+    <div id="static-heatmaps-container">
+        <!-- Container for contact map generated from CIF file -->
+        <div id="cif-contact-map-container"></div>
+        <!-- Container for Jacobian contact map from JSON file -->
+        <div id="jacobian-contact-map-container"></div>
+    </div>
+
+    <!-- Tooltip -->
     <div id="tooltip" class="hidden"></div>
 
-    <!-- Include D3.js -->
-    <script src="https://d3js.org/d3.v6.min.js"></script>
-    <!-- Include the main JavaScript file -->
+    <!-- Include the script files -->
     <script src="script.js"></script>
 </body>
 </html>
