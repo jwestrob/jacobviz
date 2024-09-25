@@ -16,6 +16,29 @@ document.addEventListener('DOMContentLoaded', function () {
     let viewer = null;
     let residueMapping = {};
 
+    // Mapping of chainID to color
+    const chainColorMap = {};
+
+    // Variables for performance optimization
+    let isZooming = false;
+    let mouseoverTimeout = null;
+    let renderTimeout = null;
+    let previouslyHighlightedResidues = [];
+
+    // Variables for CIF data and atoms
+    let cifData = null;
+    let cifAtoms = null;
+
+    // Define a list of standard amino acid residue names to exclude waters and other unwanted residues
+    const standardResidues = new Set([
+        'ALA', 'CYS', 'ASP', 'GLU', 'PHE',
+        'GLY', 'HIS', 'ILE', 'LYS', 'LEU',
+        'MET', 'ASN', 'PRO', 'GLN', 'ARG',
+        'SER', 'THR', 'VAL', 'TRP', 'TYR',
+        // Add nucleic acids if necessary
+        'DA', 'DC', 'DG', 'DT', 'A', 'C', 'G', 'T', 'U'
+    ]);
+
     // Fetch the list of JSON data files from the server
     fetch(dataFilesEndpoint)
         .then(response => response.json())
@@ -97,10 +120,19 @@ document.addEventListener('DOMContentLoaded', function () {
         const matrixSize = matrixData.length;
 
         // Update heatmap dimensions based on container size
-        const containerWidth = document.getElementById('heatmap-container').clientWidth;
-        const containerHeight = containerWidth; // Keep it square
-        heatmapWidth = containerWidth - 40; // Account for margins
-        heatmapHeight = containerHeight - 40;
+        const middleContainer = document.getElementById('middle-container');
+        const containerWidth = middleContainer.clientWidth;
+        const containerHeight = middleContainer.clientHeight;
+
+        // Since CSS handles the layout, we can set heatmapWidth and heatmapHeight based on containerWidth
+        // Assuming heatmap-container and protein-visualizer-container each take ~48% of the width
+        heatmapWidth = middleContainer.clientWidth * 0.48 - 20; // 20 accounts for margin
+        heatmapHeight = middleContainer.clientHeight - 20; // Adjust as needed
+
+        // Log dimensions for debugging
+        console.log('Middle Container Width:', containerWidth);
+        console.log('Heatmap Width:', heatmapWidth);
+        console.log('Heatmap Height:', heatmapHeight);
 
         // Create scales
         const xScale = d3.scaleBand()
@@ -109,8 +141,8 @@ document.addEventListener('DOMContentLoaded', function () {
             .padding(0.01);
 
         const yScale = d3.scaleBand()
-            .domain(d3.range(matrixSize).reverse()) // Inverted Y-axis
-            .range([0, heatmapHeight])
+            .domain(d3.range(matrixSize))
+            .range([0, heatmapHeight]) // Adjusted Y-axis range
             .padding(0.01);
 
         const colorScale = d3.scaleSequential(d3.interpolateViridis)
@@ -119,8 +151,11 @@ document.addEventListener('DOMContentLoaded', function () {
         // Render sequences
         renderSequences(sequences, sequencePositions);
 
-        // Render heatmap
+        // Render Jacobian heatmap
         renderHeatmap(matrixData, xScale, yScale, colorScale, sequencePositions);
+
+        // Render static Jacobian contact map at the bottom right
+        renderStaticJacobianContactMap(matrixData);
 
         // If pdb_id is present, fetch and visualize the protein structure
         if (data.pdb_id) {
@@ -131,6 +166,95 @@ document.addEventListener('DOMContentLoaded', function () {
             viewer = null;
             residueMapping = {};
         }
+    }
+
+    // Function to render the static Jacobian contact map
+    function renderStaticJacobianContactMap(matrixData) {
+        const container = d3.select('#jacobian-contact-map-container');
+        container.html(''); // Clear existing content
+
+        // Add a title
+        container.append('h2').text('Jacobian Contact Map');
+
+        // Dimensions
+        const margin = { top: 50, right: 50, bottom: 50, left: 50 };
+        const width = heatmapWidth + margin.left + margin.right;
+        const height = heatmapHeight + margin.top + margin.bottom;
+        const matrixSize = matrixData.length;
+
+        // Create scales
+        const xScale = d3.scaleBand()
+            .domain(d3.range(matrixSize))
+            .range([0, heatmapWidth]);
+
+        const yScale = d3.scaleBand()
+            .domain(d3.range(matrixSize))
+            .range([0, heatmapHeight]);
+
+        // Create SVG element
+        const svg = container.append('svg')
+            .attr('width', width)
+            .attr('height', height)
+            .append('g')
+            .attr('transform', `translate(${margin.left},${margin.top})`);
+
+        // Flatten matrix data for easier processing
+        const flatData = [];
+        for (let y = 0; y < matrixSize; y++) {
+            for (let x = 0; x < matrixSize; x++) {
+                flatData.push({
+                    value: matrixData[y][x],
+                    x: x,
+                    y: y
+                });
+            }
+        }
+
+        // Define color scale
+        const colorScale = d3.scaleSequential(d3.interpolateViridis)
+            .domain([d3.min(matrixData.flat()), d3.max(matrixData.flat())]);
+
+        // Render heatmap cells
+        svg.selectAll('rect')
+            .data(flatData)
+            .enter()
+            .append('rect')
+            .attr('x', d => xScale(d.x))
+            .attr('y', d => yScale(d.y))
+            .attr('width', xScale.bandwidth())
+            .attr('height', yScale.bandwidth())
+            .style('fill', d => colorScale(d.value));
+
+        // Add x-axis
+        const xAxis = d3.axisBottom(xScale)
+            .tickValues(xScale.domain().filter((d, i) => !(i % 10))) // Every 10 units
+            .tickFormat(d => d);
+
+        svg.append('g')
+            .attr('class', 'x axis')
+            .attr('transform', `translate(0,${heatmapHeight})`)
+            .call(xAxis)
+            .selectAll("text")
+            .attr("transform", "rotate(-90)")
+            .attr("dx", "-0.8em")
+            .attr("dy", "-0.5em")
+            .style("text-anchor", "end");
+
+        // Add y-axis
+        const yAxis = d3.axisLeft(yScale)
+            .tickValues(yScale.domain().filter((d, i) => !(i % 10))) // Every 10 units
+            .tickFormat(d => d);
+
+        svg.append('g')
+            .attr('class', 'y axis')
+            .call(yAxis);
+
+        // Add axis labels (only x-axis label as per your request)
+        svg.append('text')
+            .attr('x', heatmapWidth / 2)
+            .attr('y', heatmapHeight + margin.bottom - 10)
+            .attr('text-anchor', 'middle')
+            .text('Residue Index');
     }
 
     // Function to parse sequences
@@ -207,19 +331,16 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // Function to render heatmap
+    // Function to render heatmap using SVG
     function renderHeatmap(matrixData, xScale, yScale, colorScale, sequencePositions) {
         const heatmapContainer = d3.select('#heatmap-container');
         heatmapContainer.html(''); // Clear existing heatmap
 
-        const margin = { top: 20, right: 20, bottom: 20, left: 20 };
+        const margin = { top: 50, right: 50, bottom: 50, left: 50 };
 
         const svg = heatmapContainer.append('svg')
             .attr('width', heatmapWidth + margin.left + margin.right)
             .attr('height', heatmapHeight + margin.top + margin.bottom)
-            .call(d3.zoom()
-                .scaleExtent([1, 10])
-                .on('zoom', zoomed))
             .append('g')
             .attr('transform', `translate(${margin.left},${margin.top})`);
 
@@ -248,7 +369,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         // Render heatmap cells
-        heatmapGroup.selectAll('rect')
+        const cells = heatmapGroup.selectAll('rect')
             .data(flatData)
             .enter()
             .append('rect')
@@ -258,23 +379,44 @@ document.addEventListener('DOMContentLoaded', function () {
             .attr('height', yScale.bandwidth())
             .style('fill', d => colorScale(d.value))
             .on('mouseover', function (event, d) {
-                handleMouseOver(event, d, sequencePositions, xScale, yScale, svg);
+                if (isZooming) return; // Skip if zooming
+                clearTimeout(mouseoverTimeout);
+                mouseoverTimeout = setTimeout(() => {
+                    handleMouseOver(event, d, sequencePositions);
+                }, 100); // Debounce delay (in milliseconds)
             })
             .on('mouseout', function () {
+                clearTimeout(mouseoverTimeout);
                 handleMouseOut();
             });
 
-        // Zoom function
-        function zoomed(event) {
-            heatmapGroup.attr('transform', event.transform);
+        // Remove axes to prevent overlap when zoomed
+
+        // Zoom function without axis updates
+        const zoom = d3.zoom()
+            .scaleExtent([1, 10])
+            .on('start', zoomStarted)
+            .on('zoom', zoomed)
+            .on('end', zoomEnded);
+
+        svg.call(zoom);
+
+        function zoomStarted() {
+            isZooming = true;
         }
 
-        // For debugging: Print heatmap dimensions
-        console.log(`Heatmap Dimensions: Width=${heatmapWidth}, Height=${heatmapHeight}`);
+        function zoomed(event) {
+            const transform = event.transform;
+            heatmapGroup.attr('transform', transform);
+        }
+
+        function zoomEnded() {
+            isZooming = false;
+        }
     }
 
     // Function to handle mouse over event
-    function handleMouseOver(event, d, sequencePositions, xScale, yScale, svg) {
+    function handleMouseOver(event, d, sequencePositions) {
         // Highlight corresponding residues
         highlightResidues(d.x, d.y, sequencePositions);
 
@@ -293,48 +435,76 @@ document.addEventListener('DOMContentLoaded', function () {
         d3.select('#tooltip')
             .classed('hidden', true)
             .classed('visible', false);
+
+        // Clear residue info
+        d3.select('#residue-info').html('');
     }
 
     // Function to highlight residues
     function highlightResidues(xPos, yPos, sequencePositions) {
-        clearHighlights();
+        const newHighlightedResidues = [];
 
         const xMapping = mapIndexToSequence(xPos, sequencePositions);
         const yMapping = mapIndexToSequence(yPos, sequencePositions);
 
+        let residueInfoText = '';
+
         if (xMapping) {
+            const residueLetter = sequencePositions[xMapping.seqIndex].sequence[xMapping.resIndex];
             d3.select(`#seq${xMapping.seqIndex}-res${xMapping.resIndex}`)
                 .classed('hover-highlight', true);
+            residueInfoText += `Residue X: Index ${xPos}, Letter ${residueLetter}<br>`;
         }
         if (yMapping) {
+            const residueLetter = sequencePositions[yMapping.seqIndex].sequence[yMapping.resIndex];
             d3.select(`#seq${yMapping.seqIndex}-res${yMapping.resIndex}`)
                 .classed('hover-highlight', true);
+            residueInfoText += `Residue Y: Index ${yPos}, Letter ${residueLetter}<br>`;
         }
+
+        // Update residue info display
+        d3.select('#residue-info').html(residueInfoText);
 
         // Highlight residues in the protein structure
         if (viewer && residueMapping) {
-            const residuesToHighlight = [];
-
             if (xMapping && residueMapping[xPos]) {
-                residuesToHighlight.push(...residueMapping[xPos]);
+                newHighlightedResidues.push(...residueMapping[xPos]);
             }
             if (yMapping && residueMapping[yPos]) {
-                residuesToHighlight.push(...residueMapping[yPos]);
+                newHighlightedResidues.push(...residueMapping[yPos]);
             }
 
-            // Reset all styles
-            viewer.setStyle({}, { cartoon: { colorscheme: 'chain' } });
-
-            // Highlight new residues
-            if (residuesToHighlight.length > 0) {
-                residuesToHighlight.forEach(res => {
+            // Remove highlighting from previously highlighted residues
+            previouslyHighlightedResidues.forEach(res => {
+                // Reset to the chain's original color
+                const chainColor = chainColorMap[res.chain];
+                if (chainColor) {
                     viewer.setStyle(
                         { chain: res.chain, resi: res.resi },
-                        { cartoon: { color: 'red' } }
+                        { cartoon: { color: chainColor } }
                     );
-                });
-                viewer.render();
-            }
+                } else {
+                    // If no chain color found, reset to default
+                    viewer.setStyle(
+                        { chain: res.chain, resi: res.resi },
+                        { cartoon: { color: 'grey' } }
+                    );
+                }
+            });
+
+            // Apply highlighting to new residues
+            newHighlightedResidues.forEach(res => {
+                viewer.setStyle(
+                    { chain: res.chain, resi: res.resi },
+                    { cartoon: { color: 'red' } }
+                );
+            });
+
+            // Update the list of currently highlighted residues
+            previouslyHighlightedResidues = newHighlightedResidues;
+
+            // Render only if necessary
+            viewer.render();
         }
     }
 
@@ -344,10 +514,29 @@ document.addEventListener('DOMContentLoaded', function () {
             .classed('hover-highlight', false);
 
         // Reset protein structure highlights
-        if (viewer) {
-            viewer.setStyle({}, { cartoon: { colorscheme: 'chain' } });
+        if (viewer && previouslyHighlightedResidues.length > 0) {
+            previouslyHighlightedResidues.forEach(res => {
+                // Reset to the chain's original color
+                const chainColor = chainColorMap[res.chain];
+                if (chainColor) {
+                    viewer.setStyle(
+                        { chain: res.chain, resi: res.resi },
+                        { cartoon: { color: chainColor } }
+                    );
+                } else {
+                    // If no chain color found, reset to default
+                    viewer.setStyle(
+                        { chain: res.chain, resi: res.resi },
+                        { cartoon: { color: 'grey' } }
+                    );
+                }
+            });
+            previouslyHighlightedResidues = [];
             viewer.render();
         }
+
+        // Clear residue info
+        d3.select('#residue-info').html('');
     }
 
     // Function to map matrix index to sequence position
@@ -375,8 +564,23 @@ document.addEventListener('DOMContentLoaded', function () {
                 return response.text();
             })
             .then(pdbData => {
-                parsePDBAndMapResidues(pdbData, sequences);
-                renderProteinStructure(pdbData, pdb_id);
+                // Offload parsing to a Web Worker
+                const worker = new Worker('pdbWorker.js');
+                worker.postMessage({ pdbData, sequences });
+
+                worker.onmessage = function (e) {
+                    residueMapping = e.data.residueMapping;
+                    renderProteinStructure(pdbData, pdb_id);
+                    worker.terminate(); // Terminate the worker after completion
+
+                    // After rendering the protein structure, fetch and prepare the CIF contact map controls
+                    fetchCIFAndPrepareContactMap(pdb_id);
+                };
+
+                worker.onerror = function (error) {
+                    console.error(`Worker error:`, error);
+                    worker.terminate();
+                };
             })
             .catch(error => {
                 console.error(`Error fetching PDB file for ${pdb_id}:`, error);
@@ -387,111 +591,6 @@ document.addEventListener('DOMContentLoaded', function () {
             });
     }
 
-    // Function to parse PDB and map residues
-    function parsePDBAndMapResidues(pdbData, sequences) {
-        residueMapping = {}; // Reset residue mapping
-
-        const pdbLines = pdbData.split('\n');
-        const chainSequences = {};
-        const chainResidues = {};
-
-        // Extract sequences from SEQRES records
-        pdbLines.forEach(line => {
-            if (line.startsWith('SEQRES')) {
-                const chainID = line.substring(11, 12).trim();
-                const resNames = line.substring(19).trim().split(/\s+/);
-                if (!chainSequences[chainID]) {
-                    chainSequences[chainID] = '';
-                    chainResidues[chainID] = [];
-                }
-                resNames.forEach(resName => {
-                    const resCode = threeLetterToOneLetter(resName);
-                    chainSequences[chainID] += resCode;
-                    chainResidues[chainID].push({ resi: null, resn: resName });
-                });
-            }
-        });
-
-        // Map residue numbers from ATOM records
-        pdbLines.forEach(line => {
-            if (line.startsWith('ATOM') || line.startsWith('HETATM')) {
-                const chainID = line.substring(21, 22).trim();
-                const resSeq = parseInt(line.substring(22, 26).trim());
-                const resName = line.substring(17, 20).trim();
-
-                if (chainResidues[chainID]) {
-                    // Find the first residue with matching resn and resi is null
-                    const residue = chainResidues[chainID].find(res => res.resn === resName && res.resi === null);
-                    if (residue) {
-                        residue.resi = resSeq;
-                    }
-                }
-            }
-        });
-
-        // Print sequences of each chain to console for debugging
-        console.log("PDB Chain Sequences:");
-        Object.keys(chainSequences).forEach(chainID => {
-            const sequence = chainSequences[chainID];
-            console.log(`Chain ${chainID}: ${sequence}`);
-        });
-
-        // Print input sequences to console for debugging
-        console.log("Input Sequences:");
-        sequences.forEach((seq, seqIndex) => {
-            console.log(`Sequence ${seqIndex}: ${seq}`);
-        });
-
-        // Map input sequences to PDB chain sequences
-        sequences.forEach((inputSeq, seqIndex) => {
-            Object.keys(chainSequences).forEach(chainID => {
-                const chainSeq = chainSequences[chainID];
-                const alignmentIndex = simpleSequenceAlignment(chainSeq, inputSeq);
-
-                if (alignmentIndex !== -1) {
-                    console.log(`Sequence ${seqIndex} aligned with chain ${chainID} at position ${alignmentIndex}`);
-                    // Map each residue position
-                    for (let i = 0; i < inputSeq.length; i++) {
-                        const globalIndex = sequences.slice(0, seqIndex).reduce((acc, seq) => acc + seq.length + '<+>'.length, 0) + i;
-                        const chainResidue = chainResidues[chainID][alignmentIndex + i];
-
-                        if (!residueMapping[globalIndex]) {
-                            residueMapping[globalIndex] = [];
-                        }
-
-                        residueMapping[globalIndex].push({
-                            chain: chainID,
-                            resi: chainResidue.resi || (alignmentIndex + i + 1) // Assign resi if missing
-                        });
-                    }
-                } else {
-                    console.log(`Sequence ${seqIndex} did not align with chain ${chainID}`);
-                }
-            });
-        });
-
-        // For debugging: Print residueMapping
-        console.log("Residue Mapping:", residueMapping);
-    }
-
-    // Simple sequence alignment function
-    function simpleSequenceAlignment(chainSeq, inputSeq) {
-        const maxMismatch = 5; // Allow up to 5 mismatches
-        for (let i = 0; i <= chainSeq.length - inputSeq.length; i++) {
-            let mismatches = 0;
-            for (let j = 0; j < inputSeq.length; j++) {
-                if (chainSeq[i + j] !== inputSeq[j]) {
-                    mismatches++;
-                    if (mismatches > maxMismatch) break;
-                }
-            }
-            if (mismatches <= maxMismatch) {
-                return i;
-            }
-        }
-        return -1;
-    }
-
     // Function to render protein structure using 3Dmol.js
     function renderProteinStructure(pdbData, pdb_id) {
         const element = document.getElementById('protein-visualizer');
@@ -499,7 +598,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
         viewer = $3Dmol.createViewer(element, { defaultcolors: $3Dmol.rasmolElementColors });
 
-        viewer.addModel(pdbData, 'pdb');
+        // Add model with doAssembly option set to true
+        viewer.addModel(pdbData, 'pdb', { doAssembly: true });
 
         // Collect unique chain IDs manually
         const chainIDs = new Set();
@@ -509,39 +609,334 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         });
 
-        // Print chain IDs and their sequences for debugging
-        console.log("Unique Chain IDs:", Array.from(chainIDs));
-
-        // Assign unique colors to each chain
+        // Assign unique colors to each chain and store in chainColorMap
         const colorScale = d3.scaleOrdinal(d3.schemeCategory10);
         let chainIndex = 0;
         chainIDs.forEach(chainID => {
+            const color = colorScale(chainIndex);
+            chainColorMap[chainID] = color;
             viewer.setStyle(
                 { chain: chainID },
-                { cartoon: { color: colorScale(chainIndex) } }
+                { cartoon: { color: color } }
             );
             chainIndex++;
         });
-
-        // Highlight residues based on residueMapping
-        // (Residues will be highlighted on hover events)
 
         viewer.zoomTo();
         viewer.render();
     }
 
-    // Helper function to convert three-letter amino acid codes to one-letter codes
-    function threeLetterToOneLetter(threeLetter) {
-        const aaTable = {
-            'ALA': 'A', 'ARG': 'R', 'ASN': 'N', 'ASP': 'D',
-            'CYS': 'C', 'GLN': 'Q', 'GLU': 'E', 'GLY': 'G',
-            'HIS': 'H', 'ILE': 'I', 'LEU': 'L', 'LYS': 'K',
-            'MET': 'M', 'PHE': 'F', 'PRO': 'P', 'SER': 'S',
-            'THR': 'T', 'TRP': 'W', 'TYR': 'Y', 'VAL': 'V',
-            'SEC': 'U', 'PYL': 'O', 'ASX': 'B', 'GLX': 'Z',
-            'XLE': 'J', 'XAA': 'X', 'UNK': 'X', 'MSE': 'M'
-        };
-        return aaTable[threeLetter.toUpperCase()] || 'X';
+    // Function to fetch CIF file and prepare for contact map generation
+    function fetchCIFAndPrepareContactMap(pdb_id) {
+        const cifUrl = `https://files.rcsb.org/download/${pdb_id}.cif`;
+
+        fetch(cifUrl)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`Network response was not ok for CIF file of PDB ID ${pdb_id}`);
+                }
+                return response.text();
+            })
+            .then(cifText => {
+                cifData = cifText;
+                prepareContactMapControls(cifData);
+            })
+            .catch(error => {
+                console.error(`Error fetching CIF file for ${pdb_id}:`, error);
+                d3.select('#contact-map-container')
+                    .append('div')
+                    .attr('class', 'error')
+                    .text(`Error loading CIF file for ${pdb_id}: ${error.message}`);
+            });
     }
+
+    // Function to prepare contact map controls and populate chain options
+    function prepareContactMapControls(cifData) {
+        // Create a new GLModel instance with doAssembly option
+        const model = new $3Dmol.GLModel(0, { doAssembly: true });
+
+        // Add the CIF data to the model
+        model.addMolData(cifData, 'cif');
+
+        // Get the atoms
+        cifAtoms = model.atoms;
+
+        // Extract unique chain IDs
+        const chainIDs = new Set();
+        cifAtoms.forEach(atom => {
+            if (atom.chain) {
+                chainIDs.add(atom.chain);
+            }
+        });
+
+        // Populate the chain-select dropdown
+        const chainSelect = document.getElementById('chain-select');
+        chainSelect.innerHTML = ''; // Clear previous options
+
+        chainIDs.forEach(chainID => {
+            const option = document.createElement('option');
+            option.value = chainID;
+            option.text = chainID;
+            chainSelect.appendChild(option);
+        });
+
+        // By default, select all chains
+        for (let i = 0; i < chainSelect.options.length; i++) {
+            chainSelect.options[i].selected = true;
+        }
+
+        // Enable the "Generate Contact Map" button
+        const generateButton = document.getElementById('generate-contact-map-button');
+        generateButton.disabled = false;
+
+        // Remove previous event listeners to prevent multiple bindings
+        generateButton.replaceWith(generateButton.cloneNode(true));
+        const newGenerateButton = document.getElementById('generate-contact-map-button');
+
+        // Set up event listener for the button
+        newGenerateButton.addEventListener('click', function () {
+            const selectedChains = Array.from(chainSelect.selectedOptions).map(option => option.value);
+            const distanceThresholdInput = document.getElementById('distance-threshold');
+            const distanceThreshold = parseFloat(distanceThresholdInput.value);
+
+            // Debug: Log selected chains and distance threshold
+            console.log(`Selected Chains: ${selectedChains}`);
+            console.log(`Distance Threshold: ${distanceThreshold} Å`);
+
+            generateCIFContactMap(cifData, selectedChains, distanceThreshold);
+        });
+    }
+
+    // Function to generate contact map from CIF data
+    function generateCIFContactMap(cifData, selectedChains, distanceThreshold) {
+        // Use the stored cifAtoms
+        const atoms = cifAtoms;
+
+        // Filter atoms by selected chains and exclude waters ('HOH')
+        const filteredAtoms = atoms.filter(atom => {
+            return selectedChains.includes(atom.chain) && standardResidues.has(atom.resn);
+        });
+
+        // Debug: Log number of atoms after filtering
+        console.log(`Number of atoms after filtering by chains (${selectedChains.join(', ')}), excluding waters: ${filteredAtoms.length}`);
+
+        // Map to store residues
+        const residuesMap = new Map();
+
+        filteredAtoms.forEach(atom => {
+            if (atom.elem === 'H') return; // Skip hydrogen atoms
+
+            const chain = atom.chain || '';
+            const resi = atom.resi;
+            const resn = atom.resn;
+
+            // Exclude residues not in standardResidues
+            if (!standardResidues.has(resn)) {
+                return;
+            }
+
+            const residueKey = `${chain}_${resi}`;
+
+            if (!residuesMap.has(residueKey)) {
+                residuesMap.set(residueKey, {
+                    chain: chain,
+                    resi: resi,
+                    resn: resn,
+                    atoms: []
+                });
+            }
+
+            residuesMap.get(residueKey).atoms.push(atom);
+        });
+
+        // Debug: Log number of residues after grouping
+        console.log(`Number of residues after grouping (excluding waters): ${residuesMap.size}`);
+
+        // Now, for each residue, calculate the positions of all heavy atoms
+        const residues = [];
+        const residueIndices = []; // Map to original indices
+        let index = 0;
+
+        residuesMap.forEach(residue => {
+            const heavyAtoms = residue.atoms.filter(atom => atom.elem !== 'H');
+            if (heavyAtoms.length > 0) {
+                residues.push({
+                    chain: residue.chain,
+                    resi: residue.resi,
+                    resn: residue.resn,
+                    atoms: heavyAtoms
+                });
+                residueIndices.push(index);
+                index++;
+            }
+        });
+
+        // Debug: Log residues details
+        console.log(`Residues details (excluding waters):`);
+        residues.forEach((residue, resIndex) => {
+            console.log(`Residue ${resIndex}: Chain ${residue.chain}, Residue ${residue.resi}, Residue Name ${residue.resn}`);
+        });
+
+        // Extract coordinates of all heavy atoms
+        const coords = [];
+        const residueAtomIndices = [];
+        residues.forEach((residue, resIndex) => {
+            residue.atoms.forEach(atom => {
+                coords.push([atom.x, atom.y, atom.z]);
+                residueAtomIndices.push(resIndex);
+            });
+        });
+
+        // Initialize contact map with NaN
+        const totalResidues = residues.length;
+        const contactMap = new Array(totalResidues);
+        for (let i = 0; i < totalResidues; i++) {
+            contactMap[i] = new Array(totalResidues).fill(NaN);
+        }
+
+        if (coords.length > 0) {
+            const coordsArray = coords; // Array of [x, y, z]
+            const numAtoms = coordsArray.length;
+
+            // Calculate pairwise distances between all atoms
+            for (let i = 0; i < numAtoms; i++) {
+                const xi = coordsArray[i][0];
+                const yi = coordsArray[i][1];
+                const zi = coordsArray[i][2];
+                const resIndexI = residueAtomIndices[i];
+
+                for (let j = i; j < numAtoms; j++) {
+                    const xj = coordsArray[j][0];
+                    const yj = coordsArray[j][1];
+                    const zj = coordsArray[j][2];
+                    const resIndexJ = residueAtomIndices[j];
+
+                    const dx = xi - xj;
+                    const dy = yi - yj;
+                    const dz = zi - zj;
+                    const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+                    if (distance <= distanceThreshold) {
+                        contactMap[resIndexI][resIndexJ] = 1;
+                        contactMap[resIndexJ][resIndexI] = 1;
+                    }
+                }
+            }
+
+            // Set observed residues to 0 where there is no contact
+            for (let i = 0; i < totalResidues; i++) {
+                for (let j = 0; j < totalResidues; j++) {
+                    if (isNaN(contactMap[i][j])) {
+                        contactMap[i][j] = 0;
+                    }
+                }
+            }
+        }
+
+        // Debug: Log the size of the contact map
+        console.log(`Generated contact map size: ${contactMap.length} x ${contactMap.length}`);
+
+        // Debug: Compare with expected residue count
+        // Replace with dynamic value if available
+        const expectedResidues = 359; // For PDB ID 3kzk
+        console.log(`Expected number of residues: ${expectedResidues}`);
+        console.log(`Actual number of residues in contact map: ${totalResidues}`);
+
+        // Log the sequences being used
+        const sequencesUsed = residues.map(res => res.resn);
+        console.log(`Sequences used for contact map: ${sequencesUsed.join('')}`);
+
+        // Now we can render the contact map
+        renderContactMap(contactMap, residues);
+    }
+
+    // Function to render the contact map
+    function renderContactMap(contactMap, residues) {
+        const container = d3.select('#cif-contact-map-container');
+        container.html(''); // Clear existing content
+
+        // Add a title
+        container.append('h2').text('Contact Map from CIF File');
+
+        // Dimensions
+        const margin = { top: 50, right: 50, bottom: 50, left: 50 };
+        const width = heatmapWidth + margin.left + margin.right;
+        const height = heatmapHeight + margin.top + margin.bottom;
+        const totalResidues = contactMap.length;
+
+        // Create scales
+        const xScale = d3.scaleBand()
+            .domain(d3.range(totalResidues))
+            .range([0, heatmapWidth]);
+
+        const yScale = d3.scaleBand()
+            .domain(d3.range(totalResidues))
+            .range([0, heatmapHeight]);
+
+        // Create SVG element
+        const svg = container.append('svg')
+            .attr('width', width)
+            .attr('height', height)
+            .append('g')
+            .attr('transform', `translate(${margin.left},${margin.top})`);
+
+        // Flatten contact map data
+        const flatData = [];
+        for (let i = 0; i < totalResidues; i++) {
+            for (let j = 0; j < totalResidues; j++) {
+                flatData.push({
+                    x: i,
+                    y: j,
+                    value: contactMap[i][j]
+                });
+            }
+        }
+
+        // Define color scale
+        const colorScale = d3.scaleSequential(d3.interpolateBlues)
+            .domain([0, 1]);
+
+        // Render heatmap cells
+        svg.selectAll('rect')
+            .data(flatData)
+            .enter()
+            .append('rect')
+            .attr('x', d => xScale(d.x))
+            .attr('y', d => yScale(d.y))
+            .attr('width', xScale.bandwidth())
+            .attr('height', yScale.bandwidth())
+            .style('fill', d => colorScale(d.value));
+
+        // Add axes with residue indices
+        const xAxis = d3.axisBottom(xScale)
+            .tickValues(xScale.domain().filter((d, i) => !(i % 10))) // Every 10 residues
+            .tickFormat(d => residues[d].resi);
+
+        const yAxis = d3.axisLeft(yScale)
+            .tickValues(yScale.domain().filter((d, i) => !(i % 10))) // Every 10 residues
+            .tickFormat(d => residues[d].resi);
+
+        svg.append('g')
+            .attr('class', 'x axis')
+            .attr('transform', `translate(0,${heatmapHeight})`)
+            .call(xAxis)
+            .selectAll("text")
+            .attr("transform", "rotate(-90)")
+            .attr("dx", "-0.8em")
+            .attr("dy", "-0.5em")
+            .style("text-anchor", "end");
+
+        svg.append('g')
+            .attr('class', 'y axis')
+            .call(yAxis);
+
+        // Add axis labels (removed y-axis label as per your request)
+        svg.append('text')
+            .attr('x', heatmapWidth / 2)
+            .attr('y', heatmapHeight + margin.bottom - 10)
+            .attr('text-anchor', 'middle')
+            .text('Residue Index');
+    }
+
 
 });
