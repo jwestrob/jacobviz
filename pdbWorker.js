@@ -184,11 +184,12 @@ onmessage = function (e) {
                         seqOffset = seqPos - pdbPos;
                         sequenceOffsets[seqIdx] = seqOffset;
                     }
-                    residueMapping[globalSeqIndex + seqPos] = {
-                        chain: bestChainID,
-                        resi: bestResidues[pdbPos].resSeq,
-                        adjustedIndex: seqPos - seqOffset
-                    };
+                residueMapping[globalSeqIndex + seqPos] = {
+                    chain: bestChainID,
+                    resi: bestResidues[pdbPos].resSeq,
+                    adjustedIndex: seqPos - seqOffset,
+                    residueLetter: align1[k]
+                };
                     seqPos++;
                     pdbPos++;
                 } else if (aa1 !== '-' && aa2 === '-') {

@@ -460,7 +460,24 @@ document.addEventListener('DOMContentLoaded', function () {
         // Clear residue info
         d3.select('#residue-info').html('');
     }
+    // Declare a variable to keep track of labels
+    let residueLabels = [];
 
+    // Add the getResiduePosition function
+    function getResiduePosition(chainID, resi) {
+        const atoms = viewer.getModel().selectedAtoms({ chain: chainID, resi: resi });
+        if (atoms.length > 0) {
+            // Find the alpha carbon (CA) atom
+            const caAtom = atoms.find(atom => atom.atom === 'CA');
+            if (caAtom) {
+                return caAtom;
+            } else {
+                // If no CA atom, return the first atom
+                return atoms[0];
+            }
+        }
+        return null;
+    }
     // Function to highlight residues
     function highlightResidues(xPos, yPos, sequencePositions) {
         const newHighlightedResidues = [];
@@ -505,7 +522,6 @@ document.addEventListener('DOMContentLoaded', function () {
                         { cartoon: { color: chainColor } }
                     );
                 } else {
-                    // If no chain color found, reset to default
                     viewer.setStyle(
                         { chain: res.chain, resi: res.resi },
                         { cartoon: { color: 'grey' } }
@@ -513,18 +529,38 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
             });
 
-            // Apply highlighting to new residues
+            // Remove previous labels
+            residueLabels.forEach(label => {
+                viewer.removeLabel(label);
+            });
+            residueLabels = [];
+
+            // Apply highlighting to new residues and add labels
             newHighlightedResidues.forEach(res => {
                 viewer.setStyle(
                     { chain: res.chain, resi: res.resi },
                     { cartoon: { color: 'red' } }
                 );
+
+                // Add label
+                const labelText = `${res.residueLetter}${res.adjustedIndex !== undefined ? res.adjustedIndex + 1 : ''}`;
+                const position = getResiduePosition(res.chain, res.resi);
+                if (position) {
+                    const label = viewer.addLabel(labelText, {
+                        position: position,
+                        fontColor: 'black',
+                        backgroundColor: 'white',
+                        fontSize: 14,
+                        showBackground: true,
+                        alignment: 'center'
+                    });
+                    residueLabels.push(label);
+                }
             });
 
             // Update the list of currently highlighted residues
             previouslyHighlightedResidues = newHighlightedResidues;
 
-            // Render only if necessary
             viewer.render();
         }
     }
@@ -544,6 +580,13 @@ document.addEventListener('DOMContentLoaded', function () {
                     { cartoon: { color: chainColorMap[chainID] } }
                 );
             }
+
+            // Remove labels
+            residueLabels.forEach(label => {
+                viewer.removeLabel(label);
+            });
+            residueLabels = [];
+
             viewer.render();
         }
     }
