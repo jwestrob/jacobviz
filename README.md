@@ -1,4 +1,5 @@
-```# Interactive Contact Map Visualization
+
+# Interactive Contact Map Visualization
 
 ## Overview
 
@@ -71,9 +72,9 @@ Interactive Contact Map Visualization is a web-based tool that allows users to v
 - `index.html` - Main HTML file.
 - `styles.css` - CSS styles for the application.
 - `script.js` - Main JavaScript file handling UI interactions and visualization.
+- `server.js` - Main JavaScript file handling server and web worker interactions.
 - `pdbWorker.js` - Web Worker script for parsing PDB files and sequence alignment.
 - `data/` - Directory containing contact map JSON files.
-- `cif-contact-map-container` - Container for contact maps generated from CIF files.
 
 ## Technologies Used
 
@@ -93,4 +94,3 @@ This project is licensed under the [MIT License](LICENSE).
 ## Contact
 
 For any inquiries or support, please contact Jacob West-Roberts [jacob@tatta.bio](mailto:jacob@tatta.bio).
-```
